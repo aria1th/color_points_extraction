@@ -1,4 +1,3 @@
-## bulk annotating using preprocessors
 import os
 import torch
 import torch.nn as nn
@@ -262,6 +261,13 @@ class MangaLineExtraction:
         self.model.to(self.device)
         # if width or height is not divisible by 16, pad the image
         h, w = input_image.shape[:2]
+        # get adjusted pixel amount to max 1280x1280
+        total_pixels = h * w
+        if total_pixels > 1280 * 1280:
+            ratio = (1280 * 1280) / total_pixels
+            ratio = ratio ** 0.5
+            h = int(h * ratio)
+            w = int(w * ratio)
         divisible = 16
         h = h + (divisible - h % divisible) % divisible
         w = w + (divisible - w % divisible) % divisible
@@ -301,7 +307,7 @@ def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda
     # get every nth file
     if n_splits > 1:
         files = files[current_idx-1::n_splits]
-    for file in tqdm(files, desc=f"Split {current_idx} on cuda:{cuda_device}"):
+    for file in tqdm(files, desc=f"Split {current_idx} on cuda:{cuda_device} / {n_splits}"):
         try:
             image = cv2.imread(os.path.join(images_dir, file))
             line = manga_line(image)
@@ -316,13 +322,15 @@ if __name__ == "__main__":
     parser.add_argument("--images_dir", type=str, required=True)
     parser.add_argument("--result_dir", type=str, required=True)
     parser.add_argument("--n_splits", type=int, default=1)
-    parser.add_argument("--current_idx", type=int, default=1)
+    parser.add_argument("--start_idx", type=int, default=1)
+    parser.add_argument("--end_idx", type=int, default=1)
     args = parser.parse_args()
     os.makedirs(args.result_dir, exist_ok=True)
     model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
     model_download_check = MangaLineExtraction("cpu", model_dir).load_model()
     del model_download_check # now we can use the model
     with ThreadPoolExecutor(max_workers=torch.cuda.device_count()) as executor:
-        for i , cuda_device in zip(range(args.n_splits), cycle(range(torch.cuda.device_count()))):
-            executor.submit(bulk_captioning_cuda, args.images_dir, args.result_dir, args.n_splits, i + 1, cuda_device)
+        for i , cuda_device in zip(range(args.start_idx, args.end_idx+1), cycle(range(torch.cuda.device_count()))):
+            executor.submit(bulk_captioning_cuda, args.images_dir, args.result_dir, args.n_splits, i, cuda_device)
 
+# usage: python mangaline_preprocessing.py --images_dir controlnet_300k/images --result_dir controlnet_300k/mangaline_images --n_splits 11 --end_idx 11 --start_idx 6 # 6, 7, 8, 9, 10, 11 will be processed. Be careful with VRAM since it may launch multi preprocessor process on single GPU
