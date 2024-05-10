@@ -112,8 +112,8 @@ def scribble(input_image, resolution=1280, cuda_device=0, net=None):
     h, w = input_image.shape[:2]
     # get adjusted pixel amount to max 1280x1280
     total_pixels = h * w
-    if total_pixels > 1280 * 1280:
-        ratio = (1280 * 1280) / total_pixels
+    if total_pixels > resolution * resolution:
+        ratio = (resolution * resolution) / total_pixels
         ratio = ratio ** 0.5
         h = int(h * ratio)
         w = int(w * ratio)
@@ -169,8 +169,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     os.makedirs(args.result_dir, exist_ok=True)
     model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
-    model_download_check = MangaLineExtraction("cpu", model_dir).load_model()
+    model_download_check = load_model(0)
+    model_download_check.to('cpu')
     del model_download_check # now we can use the model
+    print(f"total GPUs: {torch.cuda.device_count()}")
     with ThreadPoolExecutor(max_workers=torch.cuda.device_count()) as executor:
         for i , cuda_device in zip(range(args.start_idx, args.end_idx+1), cycle(range(torch.cuda.device_count()))):
             executor.submit(bulk_captioning_cuda, args.images_dir, args.result_dir, args.n_splits, i, cuda_device)
