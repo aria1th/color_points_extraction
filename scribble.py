@@ -4,6 +4,7 @@ import torch.nn as nn
 from PIL import Image
 import fnmatch
 import cv2
+import random
 from tqdm import tqdm
 import sys
 import os
@@ -136,12 +137,14 @@ def scribble_test(input_image, resolution=1280, cuda_device=0):
     result_from_array = Image.fromarray(result)
     result_from_array.save("scribble.png")
 
-def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda_device=0):
+def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda_device=0, shuffle_seed=0):
     manga_line = load_model(cuda_device)
     manga_line.to(f"cuda:{cuda_device}")
     files = os.listdir(images_dir)
     files = [f for f in files if not f.endswith(".txt") and not f.endswith('.npz')]
     files.sort()
+    random.seed(shuffle_seed)
+    random.shuffle(files)
     print(len(files))
     # get every nth file
     if n_splits > 1:
@@ -150,7 +153,10 @@ def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda
         try:
             if os.path.exists(os.path.join(result_dir, file)):
                 continue
-            image = cv2.imread(os.path.join(images_dir, file))
+            # read with pil
+            image = Image.open(os.path.join(images_dir, file))
+            # convert to RGB first, then to numpy array
+            image = np.array(image.convert("RGB"))
             line = scribble(image, 1280, cuda_device, manga_line)
             result_from_array = Image.fromarray(line)
             result_from_array.save(os.path.join(result_dir, file))
@@ -166,6 +172,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_splits", type=int, default=1)
     parser.add_argument("--start_idx", type=int, default=1)
     parser.add_argument("--end_idx", type=int, default=1)
+    parser.add_argument("--shuffle_seed", type=int, default=0)
     args = parser.parse_args()
     os.makedirs(args.result_dir, exist_ok=True)
     model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
@@ -175,5 +182,5 @@ if __name__ == "__main__":
     print(f"total GPUs: {torch.cuda.device_count()}")
     with ThreadPoolExecutor(max_workers=torch.cuda.device_count()) as executor:
         for i , cuda_device in zip(range(args.start_idx, args.end_idx+1), cycle(range(torch.cuda.device_count()))):
-            executor.submit(bulk_captioning_cuda, args.images_dir, args.result_dir, args.n_splits, i, cuda_device)
+            executor.submit(bulk_captioning_cuda, args.images_dir, args.result_dir, args.n_splits, i, cuda_device, args.shuffle_seed)
 
