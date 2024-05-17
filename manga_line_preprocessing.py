@@ -309,9 +309,28 @@ def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda
         files = files[current_idx-1::n_splits]
     for file in tqdm(files, desc=f"Split {current_idx} on cuda:{cuda_device} / {n_splits}"):
         try:
+            if os.path.exists(os.path.join(result_dir, file)):
+                # check with load
+                image = None
+                try:
+                    image = Image.open(os.path.join(result_dir, file))
+                    image.load()
+                    image.close()
+                    image = None
+                    continue
+                except Exception as e:
+                    print(f"Error loading {file}: {e}")
+                    os.remove(os.path.join(result_dir, file))
+                finally:
+                    if image is not None:
+                        image.close()
             image = cv2.imread(os.path.join(images_dir, file))
             line = manga_line(image)
-            cv2.imwrite(os.path.join(result_dir, file), line)
+            image = Image.fromarray(line)
+            # save as .webp
+            file = file.rsplit(".", 1)[0] + ".webp"
+            image.save(os.path.join(result_dir, file), optimize=True, quality=85)
+            #cv2.imwrite(os.path.join(result_dir, file), line)
         except Exception as e:
             print(f"Error processing {file}: {e}")
             continue
@@ -333,4 +352,3 @@ if __name__ == "__main__":
         for i , cuda_device in zip(range(args.start_idx, args.end_idx+1), cycle(range(torch.cuda.device_count()))):
             executor.submit(bulk_captioning_cuda, args.images_dir, args.result_dir, args.n_splits, i, cuda_device)
 
-# usage: python mangaline_preprocessing.py --images_dir controlnet_300k/images --result_dir controlnet_300k/mangaline_images --n_splits 11 --end_idx 11 --start_idx 6 # 6, 7, 8, 9, 10, 11 will be processed. Be careful with VRAM since it may launch multi preprocessor process on single GPU
