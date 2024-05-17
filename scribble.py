@@ -137,7 +137,7 @@ def scribble_test(input_image, resolution=1280, cuda_device=0):
     result_from_array = Image.fromarray(result)
     result_from_array.save("scribble.png")
 
-def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda_device=0, shuffle_seed=0):
+def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda_device=0, shuffle_seed=0, overwrite=False):
     manga_line = load_model(cuda_device)
     manga_line.to(f"cuda:{cuda_device}")
     files = os.listdir(images_dir)
@@ -151,15 +151,30 @@ def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda
         files = files[current_idx-1::n_splits]
     for file in tqdm(files, desc=f"Split {current_idx} on cuda:{cuda_device} / {n_splits}"):
         try:
-            if os.path.exists(os.path.join(result_dir, file)):
-                continue
+            if not overwrite and os.path.exists(os.path.join(result_dir, file.rsplit(".", 1)[0] + ".webp")):
+                # check with load
+                image = None
+                try:
+                    image = Image.open(os.path.join(result_dir, file))
+                    image.load()
+                    image.close()
+                    image = None
+                    continue
+                except Exception as e:
+                    print(f"Error loading {file}: {e}")
+                    os.remove(os.path.join(result_dir, file))
+                finally:
+                    if image is not None:
+                        image.close()
             # read with pil
             image = Image.open(os.path.join(images_dir, file))
             # convert to RGB first, then to numpy array
             image = np.array(image.convert("RGB"))
             line = scribble(image, 1280, cuda_device, manga_line)
             result_from_array = Image.fromarray(line)
-            result_from_array.save(os.path.join(result_dir, file))
+            # save as .webp
+            file = file.rsplit(".", 1)[0] + ".webp"
+            result_from_array.save(os.path.join(result_dir, file), optimize=True, quality=85)
         except Exception as e:
             print(f"Error processing {file}: {e}")
             continue
@@ -173,8 +188,10 @@ if __name__ == "__main__":
     parser.add_argument("--start_idx", type=int, default=1)
     parser.add_argument("--end_idx", type=int, default=1)
     parser.add_argument("--shuffle_seed", type=int, default=0)
+    parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     os.makedirs(args.result_dir, exist_ok=True)
+    overwrite = args.overwrite
     model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
     model_download_check = load_model(0)
     model_download_check.to('cpu')
@@ -182,5 +199,5 @@ if __name__ == "__main__":
     print(f"total GPUs: {torch.cuda.device_count()}")
     with ThreadPoolExecutor(max_workers=torch.cuda.device_count()) as executor:
         for i , cuda_device in zip(range(args.start_idx, args.end_idx+1), cycle(range(torch.cuda.device_count()))):
-            executor.submit(bulk_captioning_cuda, args.images_dir, args.result_dir, args.n_splits, i, cuda_device, args.shuffle_seed)
+            executor.submit(bulk_captioning_cuda, args.images_dir, args.result_dir, args.n_splits, i, cuda_device, args.shuffle_seed, overwrite)
 
