@@ -250,13 +250,16 @@ def get_biased_random_factors():
 
 def work_wrapper(args):
     image_path, save_dir, canny_low, canny_high, n_colors, radius_scale, min_area, min_area_ratio, canny_inflate = args
+    print("Processing", image_path, "and saving the result in", os.path.join(save_dir, os.path.basename(image_path)))
     try:
         image = Image.open(image_path)
+        image = image.convert("RGB")
         result_image = quantize_and_get_synthetic(image, canny_low=canny_low, canny_high=canny_high, n_colors=n_colors, radius_scale=radius_scale, min_area=min_area, min_area_ratio=min_area_ratio, canny_inflate=canny_inflate)
-        result_image.save(os.path.join(save_dir, os.path.basename(image_path)))
+        result_image.save(os.path.join(save_dir, os.path.basename(image_path)), optimize=True, quality=85, format="webp")
     except Exception as e:
         if isinstance(e, KeyboardInterrupt):
             raise e
+        print(e)
         return
 
 
@@ -270,7 +273,25 @@ def bulk_processing(file_dir, save_dir,radius_scale=0.05, min_area=400, min_area
     args_list = []
     for file in tqdm(os.listdir(file_dir), desc="Preparing args"):
         if not file.endswith(".txt"):
+            file_basename, file_extension = os.path.splitext(file)
+            #webp
             image_path = os.path.join(file_dir, file)
+            if os.path.exists(os.path.join(save_dir, file)):
+                # check file size first, if 0, remove it
+                if os.path.getsize(os.path.join(save_dir, file)) == 0:
+                    print("File exists but empty", os.path.join(save_dir, file))
+                    os.remove(os.path.join(save_dir, file))
+                else:
+                    try:
+                        image = Image.open(os.path.join(save_dir, file))
+                        image.load()
+                        image.close()
+                    except Exception as e:
+                        print("Error loading image", os.path.join(save_dir, file), e)
+                        print("File exists but not a valid image", os.path.join(save_dir, file))
+                        os.remove(os.path.join(save_dir, file))
+                    else:
+                        continue
             canny_low, canny_high, n_colors, canny_inflate = get_biased_random_factors()
             args_list.append((image_path, save_dir, canny_low, canny_high, n_colors, radius_scale, min_area, min_area_ratio, canny_inflate))
             #work_wrapper((image_path, save_dir, canny_low, canny_high, n_colors, radius_scale, min_area, min_area_ratio, canny_inflate)) # for testing
