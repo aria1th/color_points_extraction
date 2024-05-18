@@ -150,19 +150,20 @@ def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda
     if n_splits > 1:
         files = files[current_idx-1::n_splits]
     for file in tqdm(files, desc=f"Split {current_idx} on cuda:{cuda_device} / {n_splits}"):
+        result_path = os.path.join(result_dir, file.rsplit(".", 1)[0] + ".webp")
         try:
-            if not overwrite and os.path.exists(os.path.join(result_dir, file.rsplit(".", 1)[0] + ".webp")):
+            if not overwrite and os.path.exists(result_path):
                 # check with load
                 image = None
                 try:
-                    image = Image.open(os.path.join(result_dir, file))
+                    image = Image.open(result_path)
                     image.load()
                     image.close()
                     image = None
                     continue
                 except Exception as e:
                     print(f"Error loading {file}: {e}")
-                    os.remove(os.path.join(result_dir, file))
+                    os.remove(result_path)
                 finally:
                     if image is not None:
                         image.close()
@@ -173,8 +174,7 @@ def bulk_captioning_cuda(images_dir, result_dir, n_splits=1, current_idx=1, cuda
             line = scribble(image, 1280, cuda_device, manga_line)
             result_from_array = Image.fromarray(line)
             # save as .webp
-            file = file.rsplit(".", 1)[0] + ".webp"
-            result_from_array.save(os.path.join(result_dir, file), optimize=True, quality=85)
+            result_from_array.save(result_path, optimize=True, quality=85)
         except Exception as e:
             print(f"Error processing {file}: {e}")
             continue
